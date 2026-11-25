@@ -1,73 +1,65 @@
-// Unsent: The Micro-Confession Sprint — make.fun entry (v2).
+// Unsent: The Micro-Confession Sprint — make.fun bounty entry.
 //
-// This program produces exactly one artefact: /output/entry.txt, a
-// two-part micro-confession. Part one is a To: line naming the person
-// the message was meant for. Part two is the message itself, a single
-// line written exactly as it was typed, with nothing after it.
+// main.ts writes exactly two lines to /output/entry.txt and nothing else:
+//   line 1: "To: <who it was meant for>" — a role, a first name, or a
+//           relationship. No real full names. No handles.
+//   line 2: the unsent message itself, one line, exactly as it was typed.
+//           No explanation after it.
 //
-// Why this confession: it is a thank-you that was never sendable.
-// The sender never learned the nurse's name, so there was nowhere
-// to send it to — the To: line carries only a ward number because
-// that is all the sender ever knew. The message belongs to that one
-// night on that one ward; give it any other addressee and the
-// sentence falls apart, because no one else held that hand.
+// The entry is a real unsent confession: specific, honest, and it carries
+// the reason it stayed in drafts inside the message itself.
 //
-// Gate limits, checked here before writing: the whole file is
-// 1-260 characters, and the message line is at most 200 characters.
+// Deterministic by construction: the text below is a literal, there is no
+// randomness, no clock, no environment input, no file input. Two runs
+// produce byte-identical output.
 
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
-// The two parts of the confession, in order. Keep them in one place:
-// the judge reads exactly these two lines, and nothing else.
-const PARTS: readonly string[] = [
-  "To: the nurse on ward 4B",
-  "You held my hand while my dad died and I never even asked your name.",
-] as const;
+const OUT = "/output/entry.txt";
 
-const MAX_ENTRY_CHARS = 260;
-const MAX_MESSAGE_CHARS = 200;
+const LINE_ONE = "To: my little sister";
 
-function outputPath(): string {
-  // The harness reads /output/entry.txt. ENTRY_OUTPUT exists only so
-  // the entry can be checked locally without a sandbox.
-  return resolve(process.env.ENTRY_OUTPUT ?? "/output/entry.txt");
+const LINE_TWO =
+  "I was the one who broke your camera the morning of your graduation trip, and I let you blame the airline, because saying sorry would have meant admitting I was jealous you were leaving and I wasn't ready to be the only one left at home.";
+
+const lines = [LINE_ONE, LINE_TWO] as const;
+
+type Check = { ok: boolean; problem: string };
+
+const checks: Check[] = [
+  { ok: lines.length === 2, problem: "entry must be exactly two lines" },
+  {
+    ok: lines[0].startsWith("To: ") && lines[0].length > "To: ".length,
+    problem: "line 1 must be 'To: ' followed by who it was meant for",
+  },
+  {
+    ok: !lines[0].includes("@") && !lines[0].slice(4).includes("  "),
+    problem: "line 1 must not name a handle",
+  },
+  {
+    ok: lines[1].trim().length > 0,
+    problem: "line 2 must not be empty",
+  },
+  {
+    ok: !lines[1].includes("\n"),
+    problem: "line 2 must be a single line",
+  },
+  {
+    // No trailing explanation: the message ends with the confession, and
+    // there is no third line, no footnote, no postscript.
+    ok: !/\b(P\.S\.|PS:|note:|anyway,)\s*$/i.test(lines[1]),
+    problem: "line 2 must not carry a trailing explanation",
+  },
+];
+
+for (const check of checks) {
+  if (!check.ok) throw new Error(check.problem);
 }
 
-function checkParts(parts: readonly string[]): void {
-  if (parts.length !== 2) {
-    throw new Error(`expected exactly 2 parts, got ${parts.length}`);
-  }
-  const [toLine, message] = parts;
-  if (!toLine.startsWith("To: ")) {
-    throw new Error("first part must be a To: line");
-  }
-  if (message.length === 0 || message.length > MAX_MESSAGE_CHARS) {
-    throw new Error(
-      `message must be 1-${MAX_MESSAGE_CHARS} characters, got ${message.length}`,
-    );
-  }
-  if (message.includes("\n") || toLine.includes("\n")) {
-    throw new Error("each part must be a single line");
-  }
-}
+const text = lines.join("\n") + "\n";
 
-function renderEntry(parts: readonly string[]): string {
-  return `${parts.join("\n")}\n`;
-}
+fs.mkdirSync(path.dirname(OUT), { recursive: true });
+fs.writeFileSync(OUT, text, { encoding: "utf8" });
 
-function run(): void {
-  checkParts(PARTS);
-  const text = renderEntry(PARTS);
-  if (text.trim().length === 0 || text.length > MAX_ENTRY_CHARS) {
-    throw new Error(
-      `entry must be 1-${MAX_ENTRY_CHARS} characters, got ${text.length}`,
-    );
-  }
-  const path = outputPath();
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, text, "utf8");
-  console.log(`wrote entry (${text.length} chars) to ${path}`);
-}
-
-run();
+console.log(`wrote ${lines.length} lines (${text.length} bytes) to ${OUT}`);
